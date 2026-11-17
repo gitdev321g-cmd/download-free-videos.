@@ -1,63 +1,59 @@
-const $ = (id) => document.getElementById(id);
-let currentVideoUrl = "";
 
-function showStatus(message) {
+const $ = id => document.getElementById(id);
+let currentInput = "";
+
+function status(message) {
   $("status").textContent = message || "";
 }
 
-async function readResponse(response) {
-  const contentType = response.headers.get("content-type") || "";
-
-  if (contentType.includes("application/json")) {
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "O servidor não conseguiu concluir.");
-    return data;
-  }
-
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error("O servidor retornou uma página em vez dos dados esperados. Confira a configuração da hospedagem.");
-  }
-  throw new Error("Resposta inesperada do servidor. Confira se o projeto foi publicado corretamente.");
-}
-
-async function postJson(path, payload) {
+async function post(path, data) {
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
   });
-  return readResponse(response);
+
+  const type = response.headers.get("content-type") || "";
+
+  if (type.includes("application/json")) {
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Erro no servidor.");
+    return result;
+  }
+
+  throw new Error("Resposta inválida do servidor. Confira o Render.");
 }
 
 $("paste-button").addEventListener("click", async () => {
   try {
     $("video-url").value = await navigator.clipboard.readText();
-    showStatus("Link colado. Agora toque em carregar vídeo.");
+    status("Texto colado! Clique em carregar vídeo.");
   } catch {
-    showStatus("Não consegui acessar a área de transferência. Cole o link manualmente.");
+    status("Cole o link manualmente.");
   }
 });
 
 $("load-button").addEventListener("click", async () => {
-  const url = $("video-url").value.trim();
-  if (!url) {
-    showStatus("Cole um link do TikTok primeiro.");
+  const input = $("video-url").value.trim();
+
+  if (!input) {
+    status("Cole o link do TikTok!");
     return;
   }
 
-  const button = $("load-button");
-  button.disabled = true;
-  showStatus("Carregando vídeo...");
+  $("load-button").disabled = true;
   $("result-card").classList.add("hidden");
+  status("Carregando vídeo...");
 
   try {
-    const data = await postJson("/api/info", { url });
-    currentVideoUrl = url;
+    const data = await post("/api/info", {url: input});
+    currentInput = input;
 
     $("video-title").textContent = data.title || "Vídeo do TikTok";
-    $("video-description").textContent = data.description || "Sem descrição disponível.";
-    $("video-author").textContent = data.author ? "Criador: " + data.author : "";
+    $("video-description").textContent =
+      data.description || "Sem descrição disponível.";
+    $("video-author").textContent =
+      data.author ? "Criador: " + data.author : "";
 
     const video = $("video-preview");
     const image = $("video-thumbnail");
@@ -66,6 +62,7 @@ $("load-button").addEventListener("click", async () => {
     video.pause();
     video.removeAttribute("src");
     video.load();
+
     image.removeAttribute("src");
     video.classList.add("hidden");
     image.classList.add("hidden");
@@ -92,46 +89,48 @@ $("load-button").addEventListener("click", async () => {
     }
 
     $("result-card").classList.remove("hidden");
-    showStatus("Vídeo carregado!");
+    status("Vídeo encontrado! Pode baixar.");
   } catch (error) {
-    showStatus(error.message || "Erro ao carregar o vídeo.");
+    status(error.message);
   } finally {
-    button.disabled = false;
+    $("load-button").disabled = false;
   }
 });
 
 $("download-button").addEventListener("click", async () => {
-  if (!currentVideoUrl) return;
+  if (!currentInput) return;
 
   const button = $("download-button");
   button.disabled = true;
-  showStatus("Preparando o download na melhor qualidade disponível...");
+  status("Preparando download...");
 
   try {
     const response = await fetch("/api/download", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: currentVideoUrl })
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({url: currentInput})
     });
 
     if (!response.ok) {
-      await readResponse(response);
+      const result = await response.json();
+      throw new Error(result.error || "Erro no download.");
     }
 
     const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = objectUrl;
+
+    link.href = url;
     link.download = "download-free-videos.mp4";
     document.body.appendChild(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-    showStatus("Download iniciado!");
+
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    status("Download iniciado!");
   } catch (error) {
-    showStatus(error.message || "Erro no download.");
+    status(error.message);
   } finally {
     button.disabled = false;
   }
 });
-      
