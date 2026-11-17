@@ -1,150 +1,128 @@
-import glob
-import logging
-import os
-import shutil
-import tempfile
+import glob, logging, os, re, shutil, tempfile
 from urllib.parse import urlparse
-
-from flask import Flask, jsonify, render_template, request, send_file
+import requests
 import yt_dlp
+from flask import Flask, jsonify, render_template, request, send_file
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # Requests should only contain a video URL.
 logging.basicConfig(level=logging.INFO)
+URL_RE = re.compile(r"https?://[^\\s<>'\"`]+", re.I)
+TRAILING = ".,;:!?)]}>"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Referer": "https://www.tiktok.com/",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+}
 
-
-def is_tiktok_url(value):
-    """Accept TikTok links, including the common short-link subdomains."""
-    if not isinstance(value, str) or len(value) > 2000:
-        return False
+def valid_tiktok_url(url):
     try:
-        parsed = urlparse(value.strip())
-        host = (parsed.hostname or "").lower()
-        return parsed.scheme in ("http", "https") and (
-            host == "tiktok.com" or host.endswith(".tiktok.com")
-        )
-    except (TypeError, ValueError):
+        p = urlparse(url.strip())
+        host = (p.hostname or "").lower()
+        return p.scheme in ("http", "https") and (host == "tiktok.com" or host.endswith(".tiktok.com"))
+    except (TypeError, ValueError, AttributeError):
         return False
 
+def extract_tiktok_url(text):
+    if not isinstance(text, str):
+        return None
+    for raw in URL_RE.findall(text):
+        url = raw.rstrip(TRAILING)
+        if not valid_tiktok_url(url):
+            continue
+        p = urlparse(url)
+        if (p.path or "").lower().startswith("/tiktoklite"):
+            continue
+        if (p.hostname or "").lower() in ("tiktok.com", "www.tiktok.com") and p.path in ("", "/"):
+            continue
+        return url
+    return None
+
+def resolve_short_link(url):
+    host = (urlparse(url).hostname or "").lower()
+    if host not in ("vm.tiktok.com", "vt.tiktok.com"):
+        return url
+    try:
+        r = requests.get(url, headers=HEADERS, allow_redirects=True, timeout=15)
+        final_url = r.url
+        final_host = (urlparse(final_url).hostname or "").lower()
+        if valid_tiktok_url(final_url) and final_host not in ("vm.tiktok.com", "vt.tiktok.com"):
+            return final_url
+    except requests.RequestException:
+        app.logger.info("Falha ao expandir link curto; tentando URL original.")
+    return url
+
+def get_video_url(value):
+    url = extract_tiktok_url(value)
+    return resolve_short_link(url) if url else None
 
 def ydl_options():
     return {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        # Prefer the best single-file MP4 so the server does not need FFmpeg.
-        "format": "best[ext=mp4]/best",
-        "socket_timeout": 25,
-        "retries": 2,
+        "quiet": True, "no_warnings": True, "noplaylist": True,
+        "format": "best[ext=mp4]/best", "socket_timeout": 30, "retries": 3,
+        "http_headers": HEADERS,
     }
 
-
-def get_preview_url(info):
-    """Choose a browser-previewable video URL when yt-dlp exposes one."""
-    direct_url = info.get("url")
-    if direct_url:
-        return direct_url
-
-    formats = [
-        item for item in (info.get("formats") or [])
-        if item.get("url") and item.get("vcodec") != "none"
-    ]
+def preview_url(info):
+    if info.get("url"):
+        return info["url"]
+    formats = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") != "none"]
     if not formats:
         return None
-
-    mp4_formats = [item for item in formats if item.get("ext") == "mp4"]
-    choices = mp4_formats or formats
-    best = max(
-        choices,
-        key=lambda item: (
-            item.get("height") or 0,
-            item.get("tbr") or 0,
-        ),
-    )
+    mp4 = [f for f in formats if f.get("ext") == "mp4"]
+    best = max(mp4 or formats, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
     return best.get("url")
-
 
 @app.get("/")
 def home():
     return render_template("index.html")
 
-
 @app.get("/healthz")
 def health():
     return jsonify(status="ok")
 
-
 @app.post("/api/info")
-def video_info():
+def info():
     data = request.get_json(silent=True) or {}
-    url = (data.get("url") or "").strip()
-
-    if not is_tiktok_url(url):
-        return jsonify(error="Cole um link válido do TikTok."), 400
-
+    url = get_video_url((data.get("url") or "").strip())
+    if not url:
+        return jsonify(error="Não encontrei um link de vídeo do TikTok nessa mensagem."), 400
     try:
         with yt_dlp.YoutubeDL(ydl_options()) as ydl:
-            info = ydl.extract_info(url, download=False)
-
+            item = ydl.extract_info(url, download=False)
         return jsonify(
-            title=info.get("title") or "Vídeo do TikTok",
-            description=info.get("description") or info.get("title") or "Sem descrição disponível.",
-            author=info.get("uploader") or info.get("channel") or "Criador do vídeo",
-            thumbnail=info.get("thumbnail"),
-            preview_url=get_preview_url(info),
+            title=item.get("title") or "Vídeo do TikTok",
+            description=item.get("description") or item.get("title") or "Sem descrição disponível.",
+            author=item.get("uploader") or item.get("channel") or "Criador do vídeo",
+            thumbnail=item.get("thumbnail"), preview_url=preview_url(item),
         )
-    except Exception:
-        app.logger.exception("Não foi possível obter informações do TikTok.")
-        return jsonify(
-            error="Não consegui carregar esse vídeo. Confira o link e tente novamente."
-        ), 422
-
+    except Exception as e:
+        app.logger.exception("Falha ao obter dados do TikTok")
+        return jsonify(error="Encontrei o link, mas o TikTok não liberou os dados. Tente outro vídeo público. Detalhe: " + str(e)[:160]), 422
 
 @app.post("/api/download")
-def download_video():
+def download():
     data = request.get_json(silent=True) or {}
-    url = (data.get("url") or "").strip()
-
-    if not is_tiktok_url(url):
-        return jsonify(error="Cole um link válido do TikTok."), 400
-
-    temp_dir = tempfile.mkdtemp(prefix="download_free_videos_")
+    url = get_video_url((data.get("url") or "").strip())
+    if not url:
+        return jsonify(error="Não encontrei um link de vídeo do TikTok nessa mensagem."), 400
+    folder = tempfile.mkdtemp(prefix="download_free_videos_")
     try:
-        options = ydl_options()
-        options["outtmpl"] = os.path.join(temp_dir, "video.%(ext)s")
-
-        with yt_dlp.YoutubeDL(options) as ydl:
+        opts = ydl_options()
+        opts["outtmpl"] = os.path.join(folder, "video.%(ext)s")
+        with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
-
-        downloaded_files = [
-            path for path in glob.glob(os.path.join(temp_dir, "*"))
-            if os.path.isfile(path)
-        ]
-        if not downloaded_files:
-            raise RuntimeError("O arquivo não foi encontrado após o download.")
-
-        file_path = max(downloaded_files, key=os.path.getsize)
-        extension = os.path.splitext(file_path)[1].lower()
-        download_name = "download-free-videos" + (extension or ".mp4")
-
-        response = send_file(
-            file_path,
-            as_attachment=True,
-            download_name=download_name,
-            mimetype="video/mp4" if extension == ".mp4" else "application/octet-stream",
-        )
-        # Remove the temporary file after the response has been sent/closed.
-        response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
+        files = [p for p in glob.glob(os.path.join(folder, "*")) if os.path.isfile(p)]
+        if not files:
+            raise RuntimeError("Arquivo não encontrado.")
+        path = max(files, key=os.path.getsize)
+        ext = os.path.splitext(path)[1].lower() or ".mp4"
+        response = send_file(path, as_attachment=True, download_name="download-free-videos" + ext)
+        response.call_on_close(lambda: shutil.rmtree(folder, ignore_errors=True))
         return response
-
-    except Exception:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        app.logger.exception("O download do TikTok falhou.")
-        return jsonify(
-            error="O download falhou. O vídeo pode ser privado ou o TikTok pode ter alterado o acesso."
-        ), 422
-
+    except Exception as e:
+        shutil.rmtree(folder, ignore_errors=True)
+        app.logger.exception("Falha no download do TikTok")
+        return jsonify(error="Encontrei o link, mas não consegui baixar. O vídeo pode ser privado ou o TikTok pode estar bloqueando a extração. Detalhe: " + str(e)[:160]), 422
 
 if __name__ == "__main__":
-    # Local testing only. Render runs the app with Gunicorn.
     app.run(host="0.0.0.0", port=5000, debug=False)
