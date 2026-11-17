@@ -1,60 +1,29 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#101010">
-  <meta name="description" content="Download free videos - carregue informações e baixe vídeos do TikTok.">
-  <title>Download free videos</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101010">
+<title>Download free videos</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <main class="container">
-    <header class="header">
-      <div class="brand-mark">▶</div>
-      <div class="brand-name">DOWNLOAD <span>FREE VIDEOS</span></div>
-    </header>
-
-    <section class="intro">
-      <div class="eyebrow">RÁPIDO • SIMPLES • GRATUITO</div>
-      <h1>Baixe seus vídeos<br><span>favoritos.</span></h1>
-      <p>Cole o link do TikTok, veja as informações e baixe na melhor qualidade disponível.</p>
-    </section>
-
-    <section class="input-card">
-      <label for="video-url">LINK DO TIKTOK</label>
-      <div class="input-row">
-        <input id="video-url" type="url" placeholder="Cole o link aqui..." autocomplete="url">
-        <button id="paste-button" class="paste-button" type="button">COLAR</button>
-      </div>
-      <button id="load-button" class="main-button" type="button">
-        <span>CARREGAR VÍDEO</span><span aria-hidden="true">↗</span>
-      </button>
-      <div class="quality-note">A melhor qualidade disponível é selecionada automaticamente.</div>
-    </section>
-
-    <section id="result-card" class="result-card hidden" aria-live="polite">
-      <div class="preview">
-        <video id="video-preview" controls playsinline preload="metadata" class="hidden"></video>
-        <img id="video-thumbnail" class="hidden" alt="Miniatura do vídeo">
-        <div id="preview-placeholder" class="preview-placeholder">A prévia do vídeo aparecerá aqui</div>
-      </div>
-      <div class="video-details">
-        <div class="section-label">INFORMAÇÕES DO VÍDEO</div>
-        <h2 id="video-title">Vídeo do TikTok</h2>
-        <p id="video-description"></p>
-        <div id="video-author" class="author"></div>
-      </div>
-      <button id="download-button" class="main-button download-button" type="button">
-        <span>↓</span><span>BAIXAR VÍDEO</span>
-      </button>
-      <div class="quality-note centered">MP4 quando disponível • Melhor qualidade disponível</div>
-    </section>
-
-    <div id="status" class="status" role="status"></div>
-    <footer>Baixe somente vídeos seus ou que você tenha autorização para salvar.</footer>
-  </main>
-
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
-</body>
-</html>
+<main class="container">
+<header class="header"><div class="brand-mark">▶</div><div class="brand-name">DOWNLOAD <span>FREE VIDEOS</span></div></header>
+<section class="intro"><div class="eyebrow">RÁPIDO • SIMPLES • GRATUITO</div><h1>Baixe seus vídeos<br><span>favoritos.</span></h1><p>Cole o link ou a mensagem inteira compartilhada pelo TikTok Lite.</p></section>
+<section class="input-card">
+<label for="video-url">LINK OU TEXTO DO TIKTOK</label>
+<div class="input-row"><textarea id="video-url" rows="3" placeholder="Cole aqui o link ou a mensagem inteira do TikTok..."></textarea><button id="paste-button" class="paste-button" type="button">COLAR</button></div>
+<button id="load-button" class="main-button" type="button"><span>CARREGAR VÍDEO</span><span>↗</span></button>
+<div class="quality-note">O site identifica o link do vídeo automaticamente.</div>
+</section>
+<section id="result-card" class="result-card hidden" aria-live="polite">
+<div class="preview"><video id="video-preview" controls playsinline preload="metadata" class="hidden"></video><img id="video-thumbnail" class="hidden" alt="Miniatura do vídeo"><div id="preview-placeholder" class="preview-placeholder">A prévia do vídeo aparecerá aqui</div></div>
+<div class="video-details"><div class="section-label">INFORMAÇÕES DO VÍDEO</div><h2 id="video-title">Vídeo do TikTok</h2><p id="video-description"></p><div id="video-author" class="author"></div></div>
+<button id="download-button" class="main-button download-button" type="button"><span>↓</span><span>BAIXAR VÍDEO</span></button>
+<div class="quality-note centered">Melhor qualidade disponível</div>
+</section>
+<div id="status" class="status" role="status"></div>
+<footer>Baixe somente vídeos seus ou que você tenha autorização para salvar.</footer>
+</main>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body></html>
