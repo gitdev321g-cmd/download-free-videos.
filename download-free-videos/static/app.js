@@ -6,6 +6,49 @@ function status(message) {
   $("status").textContent = message || "";
 }
 
+// Extrai o link verdadeiro do vídeo do texto compartilhado
+function extractTikTokLink(text) {
+  const links = text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+
+  const validLinks = links
+    .map(link => link.replace(/[),.;!?]+$/, ""))
+    .filter(link => {
+      try {
+        const url = new URL(link);
+        const host = url.hostname.toLowerCase();
+
+        return (
+          host === "vm.tiktok.com" ||
+          host === "vt.tiktok.com" ||
+          host === "tiktok.com" ||
+          host.endsWith(".tiktok.com")
+        );
+      } catch {
+        return false;
+      }
+    });
+
+  // Prioriza links curtos de compartilhamento
+  const shortLink = validLinks.find(link => {
+    const host = new URL(link).hostname.toLowerCase();
+    return host === "vm.tiktok.com" || host === "vt.tiktok.com";
+  });
+
+  if (shortLink) return shortLink;
+
+  // Ignora links promocionais do TikTok Lite
+  const videoLink = validLinks.find(link => {
+    const url = new URL(link);
+    return !url.pathname.toLowerCase().includes("tiktoklite");
+  });
+
+  if (!videoLink) {
+    throw new Error("Não encontrei o link do vídeo. Compartilhe novamente pelo TikTok.");
+  }
+
+  return videoLink;
+}
+
 async function post(path, data) {
   const response = await fetch(path, {
     method: "POST",
@@ -43,11 +86,14 @@ $("load-button").addEventListener("click", async () => {
 
   $("load-button").disabled = true;
   $("result-card").classList.add("hidden");
-  status("Carregando vídeo...");
+  status("Identificando link do vídeo...");
 
   try {
-    const data = await post("/api/info", {url: input});
-    currentInput = input;
+    const videoUrl = extractTikTokLink(input);
+
+    currentInput = videoUrl;
+
+    const data = await post("/api/info", {url: videoUrl});
 
     $("video-title").textContent = data.title || "Vídeo do TikTok";
     $("video-description").textContent =
@@ -72,8 +118,10 @@ $("load-button").addEventListener("click", async () => {
       video.src = data.preview_url;
       video.classList.remove("hidden");
       placeholder.classList.add("hidden");
+
       video.onerror = () => {
         video.classList.add("hidden");
+
         if (data.thumbnail) {
           image.src = data.thumbnail;
           image.classList.remove("hidden");
@@ -81,7 +129,9 @@ $("load-button").addEventListener("click", async () => {
           placeholder.classList.remove("hidden");
         }
       };
+
       video.load();
+
     } else if (data.thumbnail) {
       image.src = data.thumbnail;
       image.classList.remove("hidden");
@@ -90,8 +140,11 @@ $("load-button").addEventListener("click", async () => {
 
     $("result-card").classList.remove("hidden");
     status("Vídeo encontrado! Pode baixar.");
+
   } catch (error) {
+    currentInput = "";
     status(error.message);
+
   } finally {
     $("load-button").disabled = false;
   }
@@ -112,8 +165,14 @@ $("download-button").addEventListener("click", async () => {
     });
 
     if (!response.ok) {
-      const result = await response.json();
-      throw new Error(result.error || "Erro no download.");
+      let message = "Erro no download.";
+
+      try {
+        const result = await response.json();
+        message = result.error || message;
+      } catch {}
+
+      throw new Error(message);
     }
 
     const blob = await response.blob();
@@ -122,15 +181,20 @@ $("download-button").addEventListener("click", async () => {
 
     link.href = url;
     link.download = "download-free-videos.mp4";
+
     document.body.appendChild(link);
     link.click();
     link.remove();
 
     setTimeout(() => URL.revokeObjectURL(url), 1500);
+
     status("Download iniciado!");
+
   } catch (error) {
     status(error.message);
+
   } finally {
     button.disabled = false;
   }
 });
+        
